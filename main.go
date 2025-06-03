@@ -20,7 +20,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 )
 
-// Config holds our connection parameters
+// connection params
 type Config struct {
 	URL        string
 	Username   string
@@ -30,27 +30,23 @@ type Config struct {
 	OutputJSON bool
 }
 
-// DatastoreInfo represents information about a datastore
 type DatastoreInfo struct {
 	Name      string  `json:"name"`
 	Capacity  float64 `json:"capacity_gb"`
 	FreeSpace float64 `json:"free_space_gb"`
 }
 
-// DatastoreClusterInfo represents information about a datastore cluster
 type DatastoreClusterInfo struct {
 	Name       string          `json:"name"`
 	Datastores []DatastoreInfo `json:"datastores"`
 }
 
-// ClusterInfo represents information about a cluster
 type ClusterInfo struct {
 	Name                 string                 `json:"name"`
 	DatastoreClusters    []DatastoreClusterInfo `json:"datastore_clusters"`
 	StandaloneDatastores []DatastoreInfo        `json:"standalone_datastores"`
 }
 
-// InfrastructureInfo represents the entire infrastructure
 type InfrastructureInfo struct {
 	Datacenter string        `json:"datacenter"`
 	Clusters   []ClusterInfo `json:"clusters"`
@@ -59,10 +55,8 @@ type InfrastructureInfo struct {
 func main() {
 	ctx := context.Background()
 
-	// Parse command line flags
 	cfg := parseFlags()
 
-	// Connect to vSphere
 	client, err := connectToVSphere(ctx, cfg)
 	if err != nil {
 		fmt.Printf("Error connecting to vSphere: %s\n", err)
@@ -70,20 +64,18 @@ func main() {
 	}
 	defer client.Logout(ctx)
 
-	// Create the finder
 	finder := find.NewFinder(client.Client, true)
 
-	// Set datacenter for the finder
 	var dc *object.Datacenter
 	if cfg.Datacenter != "" {
 		dc, err = finder.Datacenter(ctx, cfg.Datacenter)
 	} else {
-		// Try to find the default datacenter
+		// Find the default datacenter
 		dc, err = finder.DefaultDatacenter(ctx)
 	}
 
 	if err != nil {
-		// If we can't find a specific datacenter, list all datacenters and exit
+		// if we can't find a specific datacenter, list all datacenters and exit
 		dcs, err := finder.DatacenterList(ctx, "*")
 		if err != nil {
 			fmt.Printf("Error: %s\n", err)
@@ -103,14 +95,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Set the datacenter on the finder
 	finder.SetDatacenter(dc)
 
 	if !cfg.OutputJSON {
 		fmt.Printf("Using datacenter: %s\n", dc.Name())
 	}
 
-	// Get all clusters
+	// get all clusters
 	clusters, err := finder.ClusterComputeResourceList(ctx, "*")
 	if err != nil {
 		fmt.Printf("Error getting clusters: %s\n", err)
@@ -129,7 +120,6 @@ func main() {
 		infraInfo.Clusters = make([]ClusterInfo, 0, len(clusters))
 	}
 
-	// For each cluster, get datastore clusters and datastores
 	for _, cluster := range clusters {
 		var clusterInfo ClusterInfo
 		if cfg.OutputJSON {
@@ -145,16 +135,16 @@ func main() {
 		pc := property.DefaultCollector(client.Client)
 		var storagePods []mo.StoragePod
 
-		// Find storage pods using inventory path lookup
+		// find storage pods using inventory path lookup
 		podRefs := []types.ManagedObjectReference{}
 
 		// Use FolderList to find datastore folders
 		datastoreFolders, err := finder.FolderList(ctx, "*/datastores")
 		if err != nil {
-			// Try another approach - might be a single folder
+
 			datastoreFolders, err = finder.FolderList(ctx, "*/datastore")
 			if err != nil {
-				// Try direct path
+				// try direct path
 				datastoreFolders, err = finder.FolderList(ctx, fmt.Sprintf("%s/datastore", dc.InventoryPath))
 				if err != nil {
 					if !cfg.OutputJSON {
@@ -348,7 +338,6 @@ func parseFlags() *Config {
 	return cfg
 }
 
-// connectToVSphere establishes a connection to the vSphere server
 func connectToVSphere(ctx context.Context, cfg *Config) (*govmomi.Client, error) {
 	u, err := soap.ParseURL(cfg.URL)
 	if err != nil {
@@ -357,23 +346,19 @@ func connectToVSphere(ctx context.Context, cfg *Config) (*govmomi.Client, error)
 
 	u.User = url.UserPassword(cfg.Username, cfg.Password)
 
-	// Set up the client
 	soapClient := soap.NewClient(u, cfg.Insecure)
 	vimClient, err := vim25.NewClient(ctx, soapClient)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create the session manager
 	sm := session.NewManager(vimClient)
 
-	// Create a govmomi client
 	client := &govmomi.Client{
 		Client:         vimClient,
 		SessionManager: sm,
 	}
 
-	// Login
 	err = sm.Login(ctx, u.User)
 	if err != nil {
 		return nil, err
